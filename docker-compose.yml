@@ -1,0 +1,101 @@
+version: "2"
+
+volumes:
+  ? mongo_data
+  ? postgres-db
+  ? grafana_data
+
+services:
+  mongodb:
+    expose:
+      - "27017"
+    hostname: mongodb
+    container_name: db-mongo
+    image: mongo:3.2
+    stdin_open: true
+    tty: true
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  orion:
+    command: -dbhost mongodb -port 1026 -logLevel DEBUG
+    depends_on:
+      - mongodb
+    expose:
+      - "1026"
+    hostname: orion
+    container_name: fiware-orion
+    image: fiware/orion:2.1.0
+    ports:
+      - "1026:1026"
+    stdin_open: true
+    tty: true
+
+  iotagent-lora:
+    depends_on:
+      - mongodb
+      - orion
+    entrypoint: bin/iotagent-lora docker/config-docker.js
+    hostname: iotagent-lora
+    container_name: fiware-iotagent-lora
+    image: ioeari/iotagent-lora
+    ports:
+      - "4061:4041"
+    stdin_open: true
+    tty: true
+    
+  draco:
+    depends_on:
+      - postgres-db
+    image:  ging/fiware-draco:1.1.0
+    hostname: draco
+    container_name: fiware-draco
+    environment:
+      - "NIFI_WEB_HTTP_PORT=9090"
+    expose:
+      - "5050"
+      - "9090"
+    ports:
+      - "9090:9090" # localhost:9090
+      - "5050:5050"
+    stdin_open: true
+    tty: true
+    healthcheck:
+      test: curl --fail -s http://draco:9090/nifi-api/system-diagnostics || exit 1
+      start_period: 1m
+      
+  postgres-db:
+    image: postgres
+    hostname: postgres-db
+    container_name: db-postgres
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    stdin_open: true
+    tty: true
+    environment:
+      - "POSTGRES_PASSWORD=password"
+      - "POSTGRES_USER=postgres"
+      - "POSTGRES_DB=postgres"
+    volumes:
+      - postgres-db:/var/lib/postgresql/data
+      
+  grafana:
+    depends_on:
+      - postgres-db
+    image: grafana/grafana
+    hostname: grafana
+    container_name: fiware-grafana
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-worldmap-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
